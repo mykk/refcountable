@@ -12,7 +12,11 @@ class RefCountableBase
    friend class RefCounted<T>;
 
 public:
-   ~RefCountableBase()
+   RefCountableBase &operator=(const RefCountableBase &) = delete;
+   RefCountableBase &operator=(RefCountableBase &&) = delete;
+
+protected:
+   virtual ~RefCountableBase()
    {
       if (counter.load(std::memory_order_relaxed) != 0)
       {
@@ -21,11 +25,6 @@ public:
          std::terminate();
       }
    }
-
-   RefCountableBase &operator=(const RefCountableBase &) = delete;
-   RefCountableBase &operator=(RefCountableBase &&) = delete;
-
-protected:
    RefCountableBase(T &value) : value{value}, counter{0} {}
    RefCountableBase(const RefCountableBase &rhs) : value{rhs.value}, counter{0} {}
    RefCountableBase(RefCountableBase &&rhs) : value{std::move(rhs.value)}, counter{0} {}
@@ -41,8 +40,22 @@ class RefCountable final
    friend class RefCounted<T>;
 
 public:
-   template <typename... Args>
-   RefCountable(Args &&...args) : value{std::forward<Args>(args)...}, counter{0}
+   template <typename Arg, typename = std::enable_if_t<
+                               !std::is_same_v<std::decay_t<Arg>, RefCountable>>>
+   explicit RefCountable(Arg &&arg)
+       : value{std::forward<Arg>(arg)}, counter{0}
+   {
+   }
+
+   template <typename Arg1, typename Arg2, typename... Args>
+   RefCountable(Arg1 &&arg1, Arg2 &&arg2, Args &&...args)
+       : value{std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Args>(args)...}, counter{0} {}
+
+   RefCountable(RefCountable &&rhs) : value{std::move(rhs.value)}, counter{0}
+   {
+   }
+
+   RefCountable(const RefCountable &rhs) : value{rhs.value}, counter{0}
    {
    }
 
@@ -56,16 +69,12 @@ public:
       }
    }
 
-   RefCountable(const RefCountable &rhs) : value{rhs.value}, counter{0}
-   {
-   }
-
    T &get() { return value; }
    const T &get() const { return value; }
 
    RefCountable &operator=(const RefCountable &rhs)
    {
-      value = rhs.value();
+      value = rhs.value;
       return *this;
    }
 
